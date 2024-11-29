@@ -1,0 +1,82 @@
+# Network Interface
+
+# Public IP
+resource "azurerm_public_ip" "vm-jumpbox-ip" {
+  name                = "vm-jumpbox-ip"
+  resource_group_name = azurerm_resource_group.appgw-rg.name
+  location            = azurerm_resource_group.appgw-rg.location
+  allocation_method   = "Static"
+  sku                 = "Standard"  # Standard SKU
+}
+
+resource "azurerm_network_interface" "vm-jumpbox" {
+  name                = "vm-jumpbox-nic"
+  resource_group_name = azurerm_resource_group.appgw-rg.name
+  location            = azurerm_resource_group.appgw-rg.location
+
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.vnet-appgw-subnet_vm.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.vm-jumpbox-ip.id  # Assign the public IP to the NIC
+
+  }
+}
+
+# Network Security Group (optional but recommended)
+resource "azurerm_network_security_group" "vm-jumpbox-nsg" {
+  name                = "vm-jumpbox-nsg"
+  resource_group_name = azurerm_resource_group.appgw-rg.name
+  location            = azurerm_resource_group.appgw-rg.location
+}
+
+# Allow SSH in the Network Security Group
+resource "azurerm_network_security_rule" "RDP" {
+  name                        = "RDP"
+  priority                    = 1001
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "3389"
+  source_address_prefix       = "*"
+  destination_address_prefix  = "*"
+  resource_group_name = azurerm_resource_group.appgw-rg.name
+  network_security_group_name = azurerm_network_security_group.vm-jumpbox-nsg.name
+}
+
+# Associate the NSG with the NIC
+resource "azurerm_network_interface_security_group_association" "vm-jumpbox" {
+  network_interface_id      = azurerm_network_interface.vm-jumpbox.id
+  network_security_group_id = azurerm_network_security_group.vm-jumpbox-nsg.id
+}
+
+# Ubuntu Virtual Machine
+resource "azurerm_windows_virtual_machine" "vm-jumpbox" {
+  name                = "vm-jumpbox"
+  resource_group_name = azurerm_resource_group.appgw-rg.name
+  location            = azurerm_resource_group.appgw-rg.location
+  size                = "Standard_DS1_v2"
+  admin_username      = "adminuser"
+  admin_password =   "admin@261986"
+  
+
+  network_interface_ids = [
+    azurerm_network_interface.vm-jumpbox.id,
+  ]
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "MicrosoftWindowsServer"
+    offer     = "WindowsServer"
+    sku       = "2019-Datacenter"
+    version   = "latest"
+  }
+
+  computer_name  = "vm-jumpbox"
+  provision_vm_agent = true
+}
